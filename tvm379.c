@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define GLOBAL 0
+#define PROCESS 1
+
 struct tlb_entrie {
     unsigned int pg_num;
     unsigned int fm_num;
@@ -17,6 +20,26 @@ struct page_entrie {
     int pid;
     int valid;
 };
+
+int init_TLB_P(int tlbentries, int n_process, struct tlb_entrie** TLB_heads, struct tlb_entrie** TLB_tails) {
+    int p, i;
+    for (p = 0; p < n_process; p++) {
+        // initial tlbentries entries
+        // create tail entry
+        struct tlb_entrie *entry = (struct tlb_entrie*) calloc(sizeof(struct tlb_entrie));
+        entry->next = NULL;
+        entry->prev = NULL;
+        TLB_heads[p] = entry;
+        TLB_tails[p] = entry;
+        // create rest tlbentries-1 entries
+        for (i = 0; i < tlbentries-1; i++) {
+            struct tlb_entrie *entry = (struct tlb_entrie*) calloc(sizeof(struct tlb_entrie));
+            entry->next = TLB_heads[p];
+            TLB_heads[p]->prev = entry;
+            TLB_heads[p] = entry;
+        }
+    }
+}
 
 // if it is global TLB, pid pass as 0, else pid is the actual process id
 int lookup_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsigned int page_num, int pid) {
@@ -96,9 +119,17 @@ int main(int argc, char *argv[]){
 
     int i,ref;
     int *phys_pg;
-    int pgsize, tlbentries, quantum, physpages;
+    int pgsize, tlbentries, quantum, physpages, tlb_type;
     unsigned int pg_num;
     FILE **processes;
+
+    // Process TLB
+    struct tlb_entrie** TLB_heads;
+    struct tlb_entrie** TLB_tails;
+
+    // Global TLB
+    struct tlb_entrie* TLB_head;
+    struct tlb_entrie* TLB_tail;
 
     /* ---------------------- check and convert input argvs --------------------------*/
     // check size of input arguments
@@ -152,6 +183,11 @@ int main(int argc, char *argv[]){
         fprintf(stderr, "The 4th argument should be { g | p }\n");
         return(1);
     }
+    if (strcmp(argv[3], "g") == 0) {
+        tlb_type = GLOBAL;
+    } else {
+        tlb_type = PROCESS;
+    }
 
     // check page eviction policy (FIFO/LRU)
     if (strcmp(argv[6], "f")!=0 && strcmp(argv[6], "l")!=0) {
@@ -172,6 +208,15 @@ int main(int argc, char *argv[]){
 
     // allocate simulated physical memory, and initalize to zero (indicate free memory)
     phys_pg = (int *) calloc(sizeof(int) * physpages);
+
+    // initalize TLB table
+    if (tlb_type == PROCESS) {
+        TLB_heads = (struct tlb_entrie**) malloc(sizeof(struct tlb_entrie*) * argc-7);
+        TLB_tails = (struct tlb_entrie**) malloc(sizeof(struct tlb_entrie*) * argc-7);
+        init_TLB_P(tlbentries, argc-7, TLB_heads, TLB_tails);
+    } else {
+        init_TLB_G(tlbentries, &TLB_head, &TLB_tail)
+    }
 
     // get number of offset bits
     int len_offset = get_N_offset(pgsize);
