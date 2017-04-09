@@ -41,6 +41,24 @@ int init_TLB_P(int tlbentries, int n_process, struct tlb_entrie** TLB_heads, str
     }
 }
 
+int init_TLB_G(int tlbentries, struct tlb_entrie** p_TLB_head, struct tlb_entrie** p_TLB_tail) {
+    int i;
+    struct tlb_entrie* TLB_head = *p_TLB_head;
+    struct tlb_entrie* TLB_tail = *p_TLB_tail;
+    // create tail entry
+    struct tlb_entrie *entry = (struct tlb_entrie*) calloc(sizeof(struct tlb_entrie));
+    entry->next = NULL;
+    entry->prev = NULL;
+    TLB_head = entry;
+    TLB_tail = entry;
+    // create rest tlbentries-1 entries
+    for (i = 0; i < tlbentries-1; i++) {
+        struct tlb_entrie *entry = (struct tlb_entrie*) calloc(sizeof(struct tlb_entrie));
+        entry->next = TLB_head;
+        TLB_head->prev = entry;
+        TLB_head = entry;
+}
+
 // if it is global TLB, pid pass as 0, else pid is the actual process id
 int lookup_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsigned int page_num, int pid) {
     // get head and tail
@@ -185,8 +203,11 @@ int main(int argc, char *argv[]){
     }
     if (strcmp(argv[3], "g") == 0) {
         tlb_type = GLOBAL;
-    } else {
+    } else if (strcmp(argv[3], "p") == 0) {
         tlb_type = PROCESS;
+    } else {
+        fprintf(stderr, "ERROR: tlb_type\n");
+        return(1);
     }
 
     // check page eviction policy (FIFO/LRU)
@@ -214,9 +235,12 @@ int main(int argc, char *argv[]){
         TLB_heads = (struct tlb_entrie**) malloc(sizeof(struct tlb_entrie*) * argc-7);
         TLB_tails = (struct tlb_entrie**) malloc(sizeof(struct tlb_entrie*) * argc-7);
         init_TLB_P(tlbentries, argc-7, TLB_heads, TLB_tails);
-    } else {
+    } else if (tlb_type == GLOBAL) {
         init_TLB_G(tlbentries, &TLB_head, &TLB_tail)
     }
+
+    // initalize Page table
+    init_pg_table
 
     // get number of offset bits
     int len_offset = get_N_offset(pgsize);
@@ -225,7 +249,7 @@ int main(int argc, char *argv[]){
     unsigned int reference;
     for (i = 0; i < argc-7; i++) {
         for (ref = 0; ref < quantum; ref++) {
-            if (!read(&reference,4,1,processes[i]);) {
+            if (!read(&reference,4,1,processes[i])) {
                 break;  // EOF
             }
             // right shift len_offset bit (get page number)
