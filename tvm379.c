@@ -14,8 +14,10 @@ struct tlb_entrie {
     struct tlb_entrie *prev = NULL;
 };
 
+
+// the (page_entrie address - base address) / sizeof(page_entrie) is page number
 struct page_entrie {
-    unsigned int pg_num;
+    // unsigned int pg_num;
     unsigned int fm_num;
     int pid;
     int valid;
@@ -132,6 +134,11 @@ int get_N_offset(int pgsize) {
     return n;
 }
 
+void init_pg_table(int pg_bits) {
+    page_entrie * page = (page_entrie *) calloc(sizeof(page_entrie) * (1 >> pg_bits));
+
+}
+
 
 int main(int argc, char *argv[]){
 
@@ -239,11 +246,12 @@ int main(int argc, char *argv[]){
         init_TLB_G(tlbentries, &TLB_head, &TLB_tail)
     }
 
-    // initalize Page table
-    init_pg_table
-
-    // get number of offset bits
+    // get number of offset/page bits
     int len_offset = get_N_offset(pgsize);
+    int len_page = 32 - len_offset;
+
+    // initalize Page table
+    init_pg_table(len_page);
 
     // reading memory references from each file in cyclical order
     unsigned int reference;
