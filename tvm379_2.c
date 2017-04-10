@@ -172,8 +172,18 @@ int lookup_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsig
     struct tlb_entrie *head = *head_ptr;
     struct tlb_entrie *tail = *tail_ptr;
     //start from the first entry
-    struct tlb_entrie* current = head;
+    struct tlb_entrie *current = head;
     //navigate through TLB table
+
+
+struct tlb_entrie* ttt = head;
+int i = 0;
+while (ttt!= NULL) {
+    i++;
+    ttt = ttt->next;
+}
+printf("num_tlb: %d\n", i);
+
 
     while(current->pg_num != page_num || current->ASID != pid) {
         //if it is last entry
@@ -183,21 +193,24 @@ int lookup_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsig
             //go to next entry
             current = current->next;
         }
+        //printf("%p\n", (void *) current);
     }
 
-    /*
-    int i = 1;
-    while (current!= NULL) {
-        i ++;
-        current = current->next;
-        printf("lalalala %d\n", i);
-    }
-    */
+printf("reach here!\n");
+//struct tlb_entrie* ttt = head;
+//int i = 0;
+//while (ttt!= NULL) {
+//    i++;
+//    ttt = ttt->next;
+//}
+//printf("num_tlb: %d\n", i);
 
 
     /* if entry found (TLB hit), return true and
         put the entry into the head of the TLB table (LRU) */
     // First, remove the hit entry from TLB table
+    prev_entry = current->prev;
+
     if (current->prev != NULL) {
         current->prev->next = current->next;
     } else {
@@ -224,9 +237,10 @@ int lookup_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsig
 
 void update_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsigned int page_num, int pid) {
   //printf("call update_tlb\n");
-    struct tlb_entrie *tail = *tail_ptr;
     struct tlb_entrie *head = *head_ptr;
+    struct tlb_entrie *tail = *tail_ptr;
 
+    /*
     // evict the least recently used entry
     struct tlb_entrie *temp = tail->prev;
     temp->next = NULL;
@@ -243,6 +257,21 @@ void update_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsi
     new_entry->next = head;
     new_entry->prev = NULL;
     head = new_entry;
+    */
+
+    struct tlb_entrie *renew_entry = tail;
+    struct tlb_entrie *last_entry = renew_entry->prev;
+    last_entry->next = NULL;
+    tail = last_entry;
+
+    // update renew_entry info
+    renew_entry->pg_num = page_num;
+    renew_entry->fm_num = 0;
+    renew_entry->ASID = pid;
+    renew_entry->valid = 1;
+    renew_entry->next = head;
+    renew_entry->prev = NULL;
+    head = renew_entry;
 }
 
 void setEvictedEntryToInvalid_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsigned int page_num, int pid) {
@@ -448,7 +477,7 @@ int main(int argc, char *argv[]){
     // initalize Page table (one table for each process)
     struct page_entrie **all_pages = (struct page_entrie **) malloc(sizeof(struct page_entrie *) * Nprocess);
     for (i = 0; i < Nprocess; i++) {
-        all_pages[i] = (struct page_entrie *) calloc((1 >> len_page), sizeof(struct page_entrie));
+        all_pages[i] = (struct page_entrie *) calloc((1 << len_page), sizeof(struct page_entrie));
     }
 
     // reading memory references (address) from each file in cyclical order
@@ -464,7 +493,7 @@ int main(int argc, char *argv[]){
     int test = 0;
     // loop until all processes is EOF (running_p = 0)
     while (running_p > 0) {
-        printf("%d\n", test);
+        printf("num%d\n", test);
         test++;
         for (i = 0; i < Nprocess; i++) {
             if (!is_EOF[i]) {
@@ -484,10 +513,10 @@ int main(int argc, char *argv[]){
 
                     // lookup TLB table first
                     if (tlb_type == PROCESS) {
-                        //printf("pos1\n");
+                        printf("pos1\n");
                         rt = lookup_tlb(&TLB_heads[i], &TLB_tails[i], pg_num, 0);
                     } else if (tlb_type == GLOBAL) {
-                        //printf("pos2\n");
+                        printf("pos2\n");
                         rt = lookup_tlb(&TLB_head, &TLB_tail, pg_num, i);
                     }
 
@@ -533,6 +562,7 @@ int main(int argc, char *argv[]){
                                 if (tlb_type == PROCESS) {
                                     setEvictedEntryToInvalid_tlb(&TLB_heads[evicted_pid], &TLB_tails[evicted_pid], evicted_pg_num, 0);
                                 } else if (tlb_type == GLOBAL) {
+                                    printf("call setEvictedEntryToInvalid_tlb\n");
                                     setEvictedEntryToInvalid_tlb(&TLB_head, &TLB_tail, evicted_pg_num, evicted_pid);
                                 }
                             }
@@ -562,6 +592,7 @@ int main(int argc, char *argv[]){
                         if (tlb_type == PROCESS && rt == 0) {
                             update_tlb(&TLB_heads[i], &TLB_tails[i], pg_num, 0);
                         } else if (tlb_type == GLOBAL && rt == 0) {
+                            printf("call update_tlb\n");
                             update_tlb(&TLB_head, &TLB_tail, pg_num, i);
                         }
                     }
