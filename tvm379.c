@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 #define GLOBAL 0
 #define PROCESS 1
@@ -8,9 +10,9 @@
 #define LRU 1
 
 // global variables
-struct free_fm *free_fm_head = NULL
-struct reference *reference_head = NULL
-struct reference *reference_tail = NULL
+struct free_fm *free_fm_head = NULL;
+struct reference *reference_head = NULL;
+struct reference *reference_tail = NULL;
 
 struct tlb_entrie {
     unsigned int pg_num;
@@ -18,8 +20,8 @@ struct tlb_entrie {
     int ASID; // if it is process specific TLB, then ASID is not used
     int valid;
     // variables needs for double-linked-list
-    struct tlb_entrie *next = NULL;
-    struct tlb_entrie *prev = NULL;
+    struct tlb_entrie *next;
+    struct tlb_entrie *prev;
 };
 
 
@@ -64,7 +66,7 @@ struct reference {
 // }
 
 void addFrameReference(int frame) {
-    new_ref = (struct reference) malloc(sizeof(struct reference));
+    struct reference *new_ref = (struct reference *) malloc(sizeof(struct reference));
     new_ref->fm_num = frame;
     new_ref->prev = reference_head;
     if (reference_head != NULL) {
@@ -83,7 +85,7 @@ void updateFrameReference(int frame) {
         if (current->fm_num == frame) {
             break;
         }
-        current = current->next
+        current = current->next;
     }
     // update the frame (move the frame to the head) LRU ONLY
     struct reference *prevFrame = current->prev;
@@ -123,19 +125,19 @@ int evictFrameReference() {
     return evited_ref->fm_num;
 }
 
-int init_TLB_P(int tlbentries, int n_process, struct tlb_entrie** TLB_heads, struct tlb_entrie** TLB_tails) {
+void init_TLB_P(int tlbentries, int n_process, struct tlb_entrie** TLB_heads, struct tlb_entrie** TLB_tails) {
     int p, i;
     for (p = 0; p < n_process; p++) {
         // initial tlbentries entries
         // create tail entry
-        struct tlb_entrie *entry = (struct tlb_entrie*) calloc(sizeof(struct tlb_entrie));
+        struct tlb_entrie *entry = (struct tlb_entrie*) calloc(1, sizeof(struct tlb_entrie));
         entry->next = NULL;
         entry->prev = NULL;
         TLB_heads[p] = entry;
         TLB_tails[p] = entry;
         // create rest tlbentries-1 entries
         for (i = 0; i < tlbentries-1; i++) {
-            struct tlb_entrie *entry = (struct tlb_entrie*) calloc(sizeof(struct tlb_entrie));
+            struct tlb_entrie *entry = (struct tlb_entrie*) calloc(1, sizeof(struct tlb_entrie));
             entry->next = TLB_heads[p];
             TLB_heads[p]->prev = entry;
             TLB_heads[p] = entry;
@@ -143,22 +145,23 @@ int init_TLB_P(int tlbentries, int n_process, struct tlb_entrie** TLB_heads, str
     }
 }
 
-int init_TLB_G(int tlbentries, struct tlb_entrie** p_TLB_head, struct tlb_entrie** p_TLB_tail) {
+void init_TLB_G(int tlbentries, struct tlb_entrie** p_TLB_head, struct tlb_entrie** p_TLB_tail) {
     int i;
     struct tlb_entrie* TLB_head = *p_TLB_head;
     struct tlb_entrie* TLB_tail = *p_TLB_tail;
     // create tail entry
-    struct tlb_entrie *entry = (struct tlb_entrie*) calloc(sizeof(struct tlb_entrie));
+    struct tlb_entrie *entry = (struct tlb_entrie*) calloc(1, sizeof(struct tlb_entrie));
     entry->next = NULL;
     entry->prev = NULL;
     TLB_head = entry;
     TLB_tail = entry;
     // create rest tlbentries-1 entries
     for (i = 0; i < tlbentries-1; i++) {
-        struct tlb_entrie *entry = (struct tlb_entrie*) calloc(sizeof(struct tlb_entrie));
+        struct tlb_entrie *entry = (struct tlb_entrie*) calloc(1, sizeof(struct tlb_entrie));
         entry->next = TLB_head;
         TLB_head->prev = entry;
         TLB_head = entry;
+      }
 }
 
 // if it is process TLB, pid pass as 0, else pid is the actual process id
@@ -209,13 +212,13 @@ void update_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsi
     struct tlb_entrie *tail = *tail_ptr;
     struct tlb_entrie *head = *head_ptr;
     // evict the least recently used entry
-    struct tlb_entrie *temp = tail->perv;
-    temp->Next = NULL;
+    struct tlb_entrie *temp = tail->prev;
+    temp->next = NULL;
     free(tail);
     tail = temp;
     // update TLB (add new entry)
     struct tlb_entrie *new_entry = (struct tlb_entrie*) malloc(sizeof(struct tlb_entrie));
-    head->prev = new_entry
+    head->prev = new_entry;
     new_entry->pg_num = page_num;
     new_entry->fm_num = 0;
     new_entry->ASID = pid;
@@ -239,7 +242,7 @@ void setEvictedEntryToInvalid_tlb(struct tlb_entrie **head_ptr, struct tlb_entri
 }
 
 int get_N_offset(int pgsize) {
-    int n = 0
+    int n = 0;
     while (pgsize != 1) {
         pgsize = pgsize / 2;
         n++;
@@ -265,7 +268,7 @@ void initFreeFrameList(int physpages) {
 
 int useFreeFrame() {
     struct free_fm *new_head = free_fm_head->next;
-    int rt_frame = free_fm_head->frame;
+    int rt_frame = free_fm_head->fm_num;
     free(free_fm_head);
     free_fm_head = new_head;
     return rt_frame;
@@ -302,6 +305,23 @@ int main(int argc, char *argv[]){
 
     // physical memeory pointer
     struct phys_entry *phys_mem;
+
+    // number of process
+    int Nprocess = argc-7;
+    // output statistic
+    int t = 0;
+    int tlbhits[Nprocess];
+    int pf[Nprocess];
+    int pageout[Nprocess];
+    int current_resident_page[Nprocess];
+    long total_resident_page[Nprocess];
+    for (i = 0; i < Nprocess; i++) {
+        tlbhits[i] = 0;
+        pf[i] = 0;
+        pageout[i] = 0;
+        current_resident_page[i] = 0;
+        total_resident_page[i] = 0;
+    }
 
     /* ---------------------- check and convert input argvs --------------------------*/
     // check size of input arguments
@@ -390,17 +410,17 @@ int main(int argc, char *argv[]){
     }
 
     // allocate simulated physical memory, and initalize to zero (indicate free memory)
-    phys_mem = (struct phys_entry *) calloc(sizeof(struct phys_entry) * physpages);
+    phys_mem = (struct phys_entry *) calloc(physpages, sizeof(struct phys_entry));
     // initalize a link list (list of free physical frame number)
     initFreeFrameList(physpages);
 
     // initalize TLB table
     if (tlb_type == PROCESS) {
-        TLB_heads = (struct tlb_entrie**) malloc(sizeof(struct tlb_entrie*) * argc-7);
-        TLB_tails = (struct tlb_entrie**) malloc(sizeof(struct tlb_entrie*) * argc-7);
-        init_TLB_P(tlbentries, argc-7, TLB_heads, TLB_tails);
+        TLB_heads = (struct tlb_entrie**) malloc(sizeof(struct tlb_entrie*) * Nprocess);
+        TLB_tails = (struct tlb_entrie**) malloc(sizeof(struct tlb_entrie*) * Nprocess);
+        init_TLB_P(tlbentries, Nprocess, TLB_heads, TLB_tails);
     } else if (tlb_type == GLOBAL) {
-        init_TLB_G(tlbentries, &TLB_head, &TLB_tail)
+        init_TLB_G(tlbentries, &TLB_head, &TLB_tail);
     }
 
     // get number of offset/page bits
@@ -408,21 +428,25 @@ int main(int argc, char *argv[]){
     int len_page = 32 - len_offset;
 
     // initalize Page table (one table for each process)
-    page_entrie **all_pages = (page_entrie **) malloc(sizeof(page_entrie *) * argc-7);
-    for (i = 0; i < argc-7; i++) {
-        all_pages[i] = (page_entrie *) calloc(sizeof(page_entrie) * (1 >> len_page));
+    struct page_entrie **all_pages = (struct page_entrie **) malloc(sizeof(struct page_entrie *) * Nprocess);
+    for (i = 0; i < Nprocess; i++) {
+        all_pages[i] = (struct page_entrie *) calloc((1 >> len_page), sizeof(struct page_entrie));
     }
 
-    // reading memory references from each file in cyclical order
-    unsigned int reference;
-    int rt, fm_num;
-    for (i = 0; i < argc-7; i++) {
+    // reading memory references (address) from each file in cyclical order
+    unsigned int address;
+    int rt, fm_num, evicted_pg_num, evicted_pid;
+    for (i = 0; i < Nprocess; i++) {
         for (ref = 0; ref < quantum; ref++) {
-            if (!read(&reference,4,1,processes[i])) {
+            if (!fread(&address,4,1,processes[i])) {
                 break;  // EOF
             }
+            // increment counter of total number of reference ------------------
+            t = t + 1;
+            // -----------------------------------------------------------------
+
             // right shift len_offset bit (get page number)
-            pg_num = reference >> len_offset;
+            pg_num = address >> len_offset;
 
             // lookup TLB table first
             if (tlb_type == PROCESS) {
@@ -435,6 +459,11 @@ int main(int argc, char *argv[]){
             if (rt == 0 || rt == 1) {
                 // lookup page table
                 if (all_pages[i][pg_num].valid == 0) {      // page-fault
+                    // increment page-fault (pf) counter
+                    // ---------------------------------------------------------
+                    pf[i] = pf[i] + 1;
+                    // ---------------------------------------------------------
+
                     // if there is a free frame. use the free frame first
                     if (free_fm_head != NULL) {
                         fm_num = useFreeFrame();
@@ -455,6 +484,12 @@ int main(int argc, char *argv[]){
                         evicted_pg_num = phys_mem[fm_num].pg_num;
                         evicted_pid = phys_mem[fm_num].pid;
 
+                        //increment pageout counter, decrease victim process's current_resident_page
+                        // -------------------------------------------------------------------------
+                        pageout[evicted_pid] = pageout[evicted_pid] + 1;
+                        current_resident_page[evicted_pid] = current_resident_page[evicted_pid] - 1;
+                        // -------------------------------------------------------------------------
+
                         // set evicted page table to invalid
                         all_pages[evicted_pid][evicted_pg_num].valid = 0;
 
@@ -469,6 +504,12 @@ int main(int argc, char *argv[]){
                     // update page table (bring in new entry)
                     all_pages[i][pg_num].valid = 1;
                     all_pages[i][pg_num].fm_num = fm_num;
+
+                    // increment current_resident_page of the swap-in process
+                    // ---------------------------------------------------------
+                    current_resident_page[i] = current_resident_page[i] + 1;
+                    // ---------------------------------------------------------
+
                 }
 
                 // in physcial memory (page table is valid), it just not in TLB
@@ -483,20 +524,31 @@ int main(int argc, char *argv[]){
                 // update TLB table (bring in new entry)
                 // if rt = 0, the entry does not in TLB table
                 if (tlb_type == PROCESS && rt == 0) {
-                    rt = update_tlb(&TLB_heads[i], &TLB_tails[i], pg_num, 0);
+                    update_tlb(&TLB_heads[i], &TLB_tails[i], pg_num, 0);
                 } else if (tlb_type == GLOBAL && rt == 0) {
-                    rt = update_tlb(&TLB_head, &TLB_tail, pg_num, i);
+                    update_tlb(&TLB_head, &TLB_tail, pg_num, i);
                 }
             }
 
             // TLB Hit
             if (rt == 2) {
-                pass
+                // increment tlbhits counter
+                tlbhits[i] = tlbhits[i] + 1;
             }
+
+            // add up total_resident_page ------------------------------------------------
+            for (i = 0; i < Nprocess; i++) {
+                total_resident_page[i] = total_resident_page[i] + current_resident_page[i];
+            }
+            // ---------------------------------------------------------------------------
+
 
         }
     }
 
+    for (int i = 0; i < Nprocess; i++) {
+        printf("Process%d: %d %d %d %ld\n", i+1, tlbhits[i], pf[i], pageout[i], total_resident_page[i] / t);
+    }
 
 
 
