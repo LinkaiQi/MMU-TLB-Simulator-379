@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <assert.h>
 
 #define GLOBAL 0
 #define PROCESS 1
@@ -68,10 +69,11 @@ struct reference {
 //    }
 // }
 
+// add frame reference to the head of the linked-list
 void addFrameReference(int frame) {
-    struct reference *new_ref = (struct reference *) malloc(sizeof(struct reference));
+    struct reference *new_ref = (struct reference *) calloc(1, sizeof(struct reference));
     new_ref->fm_num = frame;
-    new_ref->prev = reference_head;
+    new_ref->next = reference_head;
     if (reference_head != NULL) {
         reference_head->prev = new_ref;
     } else {
@@ -209,17 +211,18 @@ printf("reach here!\n");
     /* if entry found (TLB hit), return true and
         put the entry into the head of the TLB table (LRU) */
     // First, remove the hit entry from TLB table
-    prev_entry = current->prev;
+    struct tlb_entrie *prev_entry = current->prev;
+    struct tlb_entrie *next_entry = current->next;
 
-    if (current->prev != NULL) {
-        current->prev->next = current->next;
+    if (prev_entry != NULL) {
+        prev_entry->next = next_entry;
     } else {
-        head = current->next;
+        head = next_entry;
     }
-    if (current->next != NULL) {
-        current->next->prev = current->prev;
+    if (next_entry != NULL) {
+        next_entry->prev = prev_entry;
     } else {
-        tail = current->prev;
+        tail = prev_entry;
     }
     // then add to the removed entry to the head of TLB table
     current->prev = NULL;
@@ -230,6 +233,53 @@ printf("reach here!\n");
     // if the entry in invalid
     if (head->valid == 0) {
         head->valid = 1;
+        return 1;
+    }
+    return 2;
+}
+
+// Global lookup TLB
+int lookup_tlb_G(unsigned int page_num, int pid) {
+    //start from the first entry
+    struct tlb_entrie *current = TLB_head;
+
+    //navigate through TLB table
+    while(current->pg_num != page_num || current->ASID != pid) {
+        //if it is last entry
+        if(current->next == NULL) {
+            return 0;
+        } else {
+            //go to next entry
+            current = current->next;
+        }
+        //printf("%p\n", (void *) current);
+    }
+
+    /* if entry found (TLB hit), return true and
+        put the entry into the head of the TLB table (LRU) */
+    // First, remove the hit entry from TLB table
+    struct tlb_entrie *prev_entry = current->prev;
+    struct tlb_entrie *next_entry = current->next;
+
+    if (prev_entry != NULL) {
+        prev_entry->next = next_entry;
+    } else {
+        TLB_head = next_entry;
+    }
+    if (next_entry != NULL) {
+        next_entry->prev = prev_entry;
+    } else {
+        TLB_tail = prev_entry;
+    }
+    // then add to the removed entry to the head of TLB table
+    current->prev = NULL;
+    current->next = TLB_head;
+    TLB_head->prev = current;
+    TLB_head = current;
+
+    // if the entry in invalid
+    if (TLB_head->valid == 0) {
+        TLB_head->valid = 1;
         return 1;
     }
     return 2;
@@ -261,6 +311,9 @@ void update_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsi
 
     struct tlb_entrie *renew_entry = tail;
     struct tlb_entrie *last_entry = renew_entry->prev;
+    printf("pointer: %p\n", (void *)tail);
+    printf("pointer: %p\n", (void *)last_entry);
+    printf("pointer: %p\n", (void *)last_entry->prev);
     last_entry->next = NULL;
     tail = last_entry;
 
@@ -271,8 +324,46 @@ void update_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsi
     renew_entry->valid = 1;
     renew_entry->next = head;
     renew_entry->prev = NULL;
+    head->prev = renew_entry;
     head = renew_entry;
 }
+
+
+void update_tlb_G(unsigned int page_num, int pid) {
+
+/*
+struct tlb_entrie* ttt = TLB_head;
+int i = 0;
+while (ttt!= NULL) {
+    i++;
+    ttt = ttt->next;
+}
+printf("num_tlb: %d\n", i);
+struct tlb_entrie* yyy = TLB_tail;
+i = 0;
+while (yyy!= NULL) {
+    i++;
+    yyy = yyy->prev;
+}
+printf("num_tlb: %d\n", i);
+*/
+
+    struct tlb_entrie *renew_entry = TLB_tail;
+    struct tlb_entrie *last_entry = renew_entry->prev;
+    last_entry->next = NULL;
+    TLB_tail = last_entry;
+
+    // update renew_entry info
+    renew_entry->pg_num = page_num;
+    renew_entry->fm_num = 0;
+    renew_entry->ASID = pid;
+    renew_entry->valid = 1;
+    renew_entry->next = TLB_head;
+    renew_entry->prev = NULL;
+    TLB_head->prev = renew_entry;
+    TLB_head = renew_entry;
+}
+
 
 void setEvictedEntryToInvalid_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsigned int page_num, int pid) {
     //struct tlb_entrie *tail = *tail_ptr;
@@ -355,12 +446,12 @@ int main(int argc, char *argv[]){
     // number of process
     int Nprocess = argc-7;
     // output statistic
-    int t = 0;
+    double t = 0.0;
     int tlbhits[Nprocess];
     int pf[Nprocess];
     int pageout[Nprocess];
     int current_resident_page[Nprocess];
-    long total_resident_page[Nprocess];
+    unsigned long long int total_resident_page[Nprocess];
     for (i = 0; i < Nprocess; i++) {
         tlbhits[i] = 0;
         pf[i] = 0;
@@ -437,10 +528,10 @@ int main(int argc, char *argv[]){
     }
     if (strcmp(argv[6], "f") == 0) {
         ev_policy = FIFO;
-    } else if (strcmp(argv[3], "p") == 0) {
+    } else if (strcmp(argv[6], "l") == 0) {
         ev_policy = LRU;
     } else {
-        fprintf(stderr, "ERROR: Eviction policy\n");
+        fprintf(stderr, "ERROR Eviction policy %s\n", argv[6]);
         return(1);
     }
     /* -------------------- end check and convert input argvs ------------------------*/
@@ -483,6 +574,7 @@ int main(int argc, char *argv[]){
     // reading memory references (address) from each file in cyclical order
     unsigned int address;
     int n, rt, fm_num, evicted_pg_num, evicted_pid;
+    int jj = 0;
 
     // all processes are not EOF at start
     int is_EOF[Nprocess];
@@ -493,8 +585,26 @@ int main(int argc, char *argv[]){
     int test = 0;
     // loop until all processes is EOF (running_p = 0)
     while (running_p > 0) {
-        printf("num%d\n", test);
+        //printf("num%d\n", test);
         test++;
+
+        /*
+        struct reference *aaa = reference_head;
+        int c = 0;
+        while (aaa!= NULL) {
+            c++;
+            aaa = aaa->next;
+        }
+        printf("num_ref: %d\n", c);
+        struct reference *bbb = reference_tail;
+        c = 0;
+        while (bbb!= NULL) {
+            c++;
+            bbb = bbb->prev;
+        }
+        printf("num_ref: %d\n", c);
+        */
+
         for (i = 0; i < Nprocess; i++) {
             if (!is_EOF[i]) {
                 for (ref = 0; ref < quantum; ref++) {
@@ -513,11 +623,9 @@ int main(int argc, char *argv[]){
 
                     // lookup TLB table first
                     if (tlb_type == PROCESS) {
-                        printf("pos1\n");
                         rt = lookup_tlb(&TLB_heads[i], &TLB_tails[i], pg_num, 0);
                     } else if (tlb_type == GLOBAL) {
-                        printf("pos2\n");
-                        rt = lookup_tlb(&TLB_head, &TLB_tail, pg_num, i);
+                        rt = lookup_tlb_G(pg_num, i);
                     }
 
                     // TLB miss
@@ -538,16 +646,23 @@ int main(int argc, char *argv[]){
                                 fm_num = evictFrameReference();
                             }
 
+
                             // evict memory
                             if (phys_mem[fm_num].valid == 0) {
                                 // add occupied process-info to physical memory
                                 phys_mem[fm_num].pg_num = pg_num;
                                 phys_mem[fm_num].pid = i;
                                 phys_mem[fm_num].valid = 1;
+                                jj++;
 
                             } else {
                                 evicted_pg_num = phys_mem[fm_num].pg_num;
                                 evicted_pid = phys_mem[fm_num].pid;
+
+                                // read new physical mapping info to phys_mem
+                                phys_mem[fm_num].pg_num = pg_num;
+                                phys_mem[fm_num].pid = i;
+                                //phys_mem[fm_num].valid = 1;
 
                                 //increment pageout counter, decrease victim process's current_resident_page
                                 // -------------------------------------------------------------------------
@@ -562,7 +677,7 @@ int main(int argc, char *argv[]){
                                 if (tlb_type == PROCESS) {
                                     setEvictedEntryToInvalid_tlb(&TLB_heads[evicted_pid], &TLB_tails[evicted_pid], evicted_pg_num, 0);
                                 } else if (tlb_type == GLOBAL) {
-                                    printf("call setEvictedEntryToInvalid_tlb\n");
+                                    //printf("call setEvictedEntryToInvalid_tlb\n");
                                     setEvictedEntryToInvalid_tlb(&TLB_head, &TLB_tail, evicted_pg_num, evicted_pid);
                                 }
                             }
@@ -592,8 +707,7 @@ int main(int argc, char *argv[]){
                         if (tlb_type == PROCESS && rt == 0) {
                             update_tlb(&TLB_heads[i], &TLB_tails[i], pg_num, 0);
                         } else if (tlb_type == GLOBAL && rt == 0) {
-                            printf("call update_tlb\n");
-                            update_tlb(&TLB_head, &TLB_tail, pg_num, i);
+                            update_tlb_G(pg_num, i);
                         }
                     }
 
@@ -606,8 +720,23 @@ int main(int argc, char *argv[]){
                     // add up total_resident_page ------------------------------------------------
                     for (n = 0; n < Nprocess; n++) {
                         total_resident_page[n] = total_resident_page[n] + current_resident_page[n];
+                        assert(current_resident_page[n] <= 500);
                     }
                     // ---------------------------------------------------------------------------
+
+                    /*
+                    int p1 = 0;
+                    int p2 = 0;
+                    for (int q = 0; q < 500; q++) {
+                        if (phys_mem[q].pid == 0) {
+                            p1++;
+                        } else if (phys_mem[q].pid == 1) {
+                            p2++;
+                        }
+                    }
+
+                    printf("%d %d\n", p1, p2);
+                    */
 
 
                 }
@@ -617,8 +746,11 @@ int main(int argc, char *argv[]){
 
 
     for (i = 0; i < Nprocess; i++) {
-        printf("Process%d: %d %d %d %ld\n", i+1, tlbhits[i], pf[i], pageout[i], total_resident_page[i] / t);
+        printf("Process%d: %d %d %d %f\n", i+1, tlbhits[i], pf[i], pageout[i], total_resident_page[i]/t);
     }
+
+    printf("%d\n", jj);
+
 
 
 
