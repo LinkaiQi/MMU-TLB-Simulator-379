@@ -13,6 +13,9 @@
 struct free_fm *free_fm_head = NULL;
 struct reference *reference_head = NULL;
 struct reference *reference_tail = NULL;
+// (Global) TLB
+struct tlb_entrie* TLB_head;
+struct tlb_entrie* TLB_tail;
 
 struct tlb_entrie {
     unsigned int pg_num;
@@ -137,7 +140,7 @@ void init_TLB_P(int tlbentries, int n_process, struct tlb_entrie** TLB_heads, st
         TLB_tails[p] = entry;
         // create rest tlbentries-1 entries
         for (i = 0; i < tlbentries-1; i++) {
-            struct tlb_entrie *entry = (struct tlb_entrie*) calloc(1, sizeof(struct tlb_entrie));
+            entry = (struct tlb_entrie*) calloc(1, sizeof(struct tlb_entrie));
             entry->next = TLB_heads[p];
             TLB_heads[p]->prev = entry;
             TLB_heads[p] = entry;
@@ -145,23 +148,22 @@ void init_TLB_P(int tlbentries, int n_process, struct tlb_entrie** TLB_heads, st
     }
 }
 
-void init_TLB_G(int tlbentries, struct tlb_entrie** p_TLB_head, struct tlb_entrie** p_TLB_tail) {
+void init_TLB_G(int tlbentries) {
     int i;
-    struct tlb_entrie* TLB_head = *p_TLB_head;
-    struct tlb_entrie* TLB_tail = *p_TLB_tail;
+    struct tlb_entrie *entry;
     // create tail entry
-    struct tlb_entrie *entry = (struct tlb_entrie*) calloc(1, sizeof(struct tlb_entrie));
+    entry = (struct tlb_entrie*) calloc(1, sizeof(struct tlb_entrie));
     entry->next = NULL;
     entry->prev = NULL;
     TLB_head = entry;
     TLB_tail = entry;
     // create rest tlbentries-1 entries
     for (i = 0; i < tlbentries-1; i++) {
-        struct tlb_entrie *entry = (struct tlb_entrie*) calloc(1, sizeof(struct tlb_entrie));
+        entry = (struct tlb_entrie*) calloc(1, sizeof(struct tlb_entrie));
         entry->next = TLB_head;
         TLB_head->prev = entry;
         TLB_head = entry;
-      }
+    }
 }
 
 // if it is process TLB, pid pass as 0, else pid is the actual process id
@@ -172,6 +174,7 @@ int lookup_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsig
     //start from the first entry
     struct tlb_entrie* current = head;
     //navigate through TLB table
+
     while(current->pg_num != page_num || current->ASID != pid) {
         //if it is last entry
         if(current->next == NULL) {
@@ -181,6 +184,17 @@ int lookup_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsig
             current = current->next;
         }
     }
+
+    /*
+    int i = 1;
+    while (current!= NULL) {
+        i ++;
+        current = current->next;
+        printf("lalalala %d\n", i);
+    }
+    */
+
+
     /* if entry found (TLB hit), return true and
         put the entry into the head of the TLB table (LRU) */
     // First, remove the hit entry from TLB table
@@ -300,8 +314,8 @@ int main(int argc, char *argv[]){
     struct tlb_entrie** TLB_tails;
 
     // Global TLB
-    struct tlb_entrie* TLB_head;
-    struct tlb_entrie* TLB_tail;
+    // struct tlb_entrie* TLB_head;
+    // struct tlb_entrie* TLB_tail;
 
     // physical memeory pointer
     struct phys_entry *phys_mem;
@@ -420,7 +434,8 @@ int main(int argc, char *argv[]){
         TLB_tails = (struct tlb_entrie**) malloc(sizeof(struct tlb_entrie*) * Nprocess);
         init_TLB_P(tlbentries, Nprocess, TLB_heads, TLB_tails);
     } else if (tlb_type == GLOBAL) {
-        init_TLB_G(tlbentries, &TLB_head, &TLB_tail);
+
+        init_TLB_G(tlbentries);
     }
 
     // get number of offset/page bits
@@ -450,8 +465,10 @@ int main(int argc, char *argv[]){
 
             // lookup TLB table first
             if (tlb_type == PROCESS) {
+                printf("pos1\n");
                 rt = lookup_tlb(&TLB_heads[i], &TLB_tails[i], pg_num, 0);
             } else if (tlb_type == GLOBAL) {
+                printf("pos2\n");
                 rt = lookup_tlb(&TLB_head, &TLB_tail, pg_num, i);
             }
 
