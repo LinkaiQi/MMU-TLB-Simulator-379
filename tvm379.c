@@ -4,6 +4,14 @@
 #define GLOBAL 0
 #define PROCESS 1
 
+#define FIFO 0
+#define LRU 1
+
+// global variables
+struct free_fm *free_fm_head = NULL
+struct reference *reference_head = NULL
+struct reference *reference_tail = NULL
+
 struct tlb_entrie {
     unsigned int pg_num;
     unsigned int fm_num;
@@ -21,6 +29,99 @@ struct page_entrie {
     unsigned int fm_num;
     int valid;
 };
+
+// physical memory entry
+struct phys_entry {
+    // unsigned int fm_num;
+    // indicate this entry is be mapped into which virtual memory address
+    unsigned int pg_num;
+    int pid;
+    int valid;
+};
+
+struct free_fm {
+    int fm_num;
+    struct free_fm *next;
+};
+
+struct reference {
+    int fm_num;
+    struct reference *next;
+    struct reference *prev;
+};
+
+// void referenceFrame(int frame, int ev_policy) {
+//    struct reference new_reference;
+//    new_reference.frame = frame;
+//    new_reference.next = reference_head;
+//    new_reference.
+//    current = reference_head;
+//    while (current != NULL) {
+//        if (current->fm_num == frame) {
+//            /* code */
+//        }
+//    }
+// }
+
+void addFrameReference(int frame) {
+    new_ref = (struct reference) malloc(sizeof(struct reference));
+    new_ref->fm_num = frame;
+    new_ref->prev = reference_head;
+    if (reference_head != NULL) {
+        reference_head->prev = new_ref;
+    } else {
+        reference_tail = new_ref;
+    }
+    reference_head = new_ref;
+}
+
+// LRU ONLY
+void updateFrameReference(int frame) {
+    // search the free frame list, find the referenced frame
+    struct reference *current = reference_head;
+    while (current != NULL) {
+        if (current->fm_num == frame) {
+            break;
+        }
+        current = current->next
+    }
+    // update the frame (move the frame to the head) LRU ONLY
+    struct reference *prevFrame = current->prev;
+    struct reference *nextFrame = current->next;
+
+    // remove the frame
+    if (prevFrame != NULL) {
+        prevFrame->next = nextFrame;
+    } else {
+        reference_head = nextFrame;
+    }
+    if (nextFrame != NULL) {
+        nextFrame->prev = prevFrame;
+    } else {
+        reference_tail = prevFrame;
+    }
+
+    // add the frame to the head
+    current->prev = NULL;
+    current->next = reference_head;
+    reference_head->prev = current;
+    reference_head = current;
+}
+
+int evictFrameReference() {
+    // remove the last reference in the list
+    struct reference *evited_ref = reference_tail;
+    reference_tail = evited_ref->prev;
+    reference_tail->next = NULL;
+
+    // add it to the head
+    evited_ref->next = reference_head;
+    evited_ref->prev = NULL;
+    reference_head->prev = evited_ref;
+    reference_head = evited_ref;
+
+    return evited_ref->fm_num;
+}
 
 int init_TLB_P(int tlbentries, int n_process, struct tlb_entrie** TLB_heads, struct tlb_entrie** TLB_tails) {
     int p, i;
@@ -60,12 +161,12 @@ int init_TLB_G(int tlbentries, struct tlb_entrie** p_TLB_head, struct tlb_entrie
         TLB_head = entry;
 }
 
-// if it is global TLB, pid pass as 0, else pid is the actual process id
+// if it is process TLB, pid pass as 0, else pid is the actual process id
 int lookup_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsigned int page_num, int pid) {
     // get head and tail
     struct tlb_entrie *head = *head_ptr;
     struct tlb_entrie *tail = *tail_ptr;
-    //start from the first link
+    //start from the first entry
     struct tlb_entrie* current = head;
     //navigate through TLB table
     while(current->pg_num != page_num || current->ASID != pid) {
@@ -97,14 +198,14 @@ int lookup_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsig
     head = current;
 
     // if the entry in invalid
-    if (current->valid == 0) {
-        current->valid = 1;
-        return 2;
+    if (head->valid == 0) {
+        head->valid = 1;
+        return 1;
     }
-    return 1;
+    return 2;
 }
 
-int update_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsigned int page_num, int pid) {
+void update_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsigned int page_num, int pid) {
     struct tlb_entrie *tail = *tail_ptr;
     struct tlb_entrie *head = *head_ptr;
     // evict the least recently used entry
@@ -124,6 +225,19 @@ int update_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsig
     head = new_entry;
 }
 
+void setEvictedEntryToInvalid_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsigned int page_num, int pid) {
+    struct tlb_entrie *tail = *tail_ptr;
+    struct tlb_entrie *head = *head_ptr;
+    //start from the first entry
+    struct tlb_entrie *current = head;
+    while (current != NULL) {
+        if (current->pg_num == page_num && current->ASID == pid) {
+            current->valid = 0;
+        }
+        current = current->next;
+    }
+}
+
 int get_N_offset(int pgsize) {
     int n = 0
     while (pgsize != 1) {
@@ -133,12 +247,48 @@ int get_N_offset(int pgsize) {
     return n;
 }
 
+/* Code Reference: https://www.tutorialspoint.com/data_structures_algorithms/linked_list_program_in_c.htm */
+void initFreeFrameList(int physpages) {
+    int i;
+    for (i = physpages-1; i >= 0; i--) {
+        //create a link
+        struct free_fm *link = (struct free_fm*) malloc(sizeof(struct free_fm));
+        link->fm_num = i;
+        //point it to old first node
+        link->next = free_fm_head;
+        //point first to new first node
+        free_fm_head = link;
+        //printf("%s ", my_head->type);
+        //return head;
+    }
+}
+
+int useFreeFrame() {
+    struct free_fm *new_head = free_fm_head->next;
+    int rt_frame = free_fm_head->frame;
+    free(free_fm_head);
+    free_fm_head = new_head;
+    return rt_frame;
+}
+
+void addFreeFrame(int frame) {
+    //create a link
+    struct free_fm *link = (struct free_fm*) malloc(sizeof(struct free_fm));
+    link->fm_num = frame;
+    //point it to old first node
+    link->next = free_fm_head;
+    //point first to new first node
+    free_fm_head = link;
+    //printf("%s ", my_head->type);
+    //return head;
+}
+
+
 
 int main(int argc, char *argv[]){
 
     int i,ref;
-    int *phys_pg;
-    int pgsize, tlbentries, quantum, physpages, tlb_type;
+    int pgsize, tlbentries, quantum, physpages, tlb_type, ev_policy;
     unsigned int pg_num;
     FILE **processes;
 
@@ -149,6 +299,9 @@ int main(int argc, char *argv[]){
     // Global TLB
     struct tlb_entrie* TLB_head;
     struct tlb_entrie* TLB_tail;
+
+    // physical memeory pointer
+    struct phys_entry *phys_mem;
 
     /* ---------------------- check and convert input argvs --------------------------*/
     // check size of input arguments
@@ -216,6 +369,14 @@ int main(int argc, char *argv[]){
         fprintf(stderr, "The 7th argument should be { f | l }\n");
         return(1);
     }
+    if (strcmp(argv[6], "f") == 0) {
+        ev_policy = FIFO;
+    } else if (strcmp(argv[3], "p") == 0) {
+        ev_policy = LRU;
+    } else {
+        fprintf(stderr, "ERROR: Eviction policy\n");
+        return(1);
+    }
     /* -------------------- end check and convert input argvs ------------------------*/
 
     // allocate memory to store trace file pointers
@@ -229,7 +390,9 @@ int main(int argc, char *argv[]){
     }
 
     // allocate simulated physical memory, and initalize to zero (indicate free memory)
-    phys_pg = (int *) calloc(sizeof(int) * physpages);
+    phys_mem = (struct phys_entry *) calloc(sizeof(struct phys_entry) * physpages);
+    // initalize a link list (list of free physical frame number)
+    initFreeFrameList(physpages);
 
     // initalize TLB table
     if (tlb_type == PROCESS) {
@@ -252,6 +415,7 @@ int main(int argc, char *argv[]){
 
     // reading memory references from each file in cyclical order
     unsigned int reference;
+    int rt, fm_num;
     for (i = 0; i < argc-7; i++) {
         for (ref = 0; ref < quantum; ref++) {
             if (!read(&reference,4,1,processes[i])) {
@@ -259,6 +423,77 @@ int main(int argc, char *argv[]){
             }
             // right shift len_offset bit (get page number)
             pg_num = reference >> len_offset;
+
+            // lookup TLB table first
+            if (tlb_type == PROCESS) {
+                rt = lookup_tlb(&TLB_heads[i], &TLB_tails[i], pg_num, 0);
+            } else if (tlb_type == GLOBAL) {
+                rt = lookup_tlb(&TLB_head, &TLB_tail, pg_num, i);
+            }
+
+            // TLB miss
+            if (rt == 0 || rt == 1) {
+                // lookup page table
+                if (all_pages[i][pg_num].valid == 0) {      // page-fault
+                    // if there is a free frame. use the free frame first
+                    if (free_fm_head != NULL) {
+                        fm_num = useFreeFrame();
+                        addFrameReference(fm_num);
+                    } else {
+                        // else evict a frame
+                        fm_num = evictFrameReference();
+                    }
+
+                    // evict memory
+                    if (phys_mem[fm_num].valid == 0) {
+                        // add occupied process-info to physical memory
+                        phys_mem[fm_num].pg_num = pg_num;
+                        phys_mem[fm_num].pid = i;
+                        phys_mem[fm_num].valid = 1;
+
+                    } else {
+                        evicted_pg_num = phys_mem[fm_num].pg_num;
+                        evicted_pid = phys_mem[fm_num].pid;
+
+                        // set evicted page table to invalid
+                        all_pages[evicted_pid][evicted_pg_num].valid = 0;
+
+                        // set evicted TLB table to invalid
+                        if (tlb_type == PROCESS) {
+                            setEvictedEntryToInvalid_tlb(&TLB_heads[evicted_pid], &TLB_tails[evicted_pid], evicted_pg_num, 0);
+                        } else if (tlb_type == GLOBAL) {
+                            setEvictedEntryToInvalid_tlb(&TLB_head, &TLB_tail, evicted_pg_num, evicted_pid);
+                        }
+                    }
+
+                    // update page table (bring in new entry)
+                    all_pages[i][pg_num].valid = 1;
+                    all_pages[i][pg_num].fm_num = fm_num;
+                }
+
+                // in physcial memory (page table is valid), it just not in TLB
+                else if (all_pages[i][pg_num].valid == 1) {
+                    // if eviction policy is LRU -> "wipe the dust"
+                    if (ev_policy == LRU) {
+                        fm_num = all_pages[i][pg_num].fm_num;
+                        updateFrameReference(fm_num);
+                    }
+                }
+
+                // update TLB table (bring in new entry)
+                // if rt = 0, the entry does not in TLB table
+                if (tlb_type == PROCESS && rt == 0) {
+                    rt = update_tlb(&TLB_heads[i], &TLB_tails[i], pg_num, 0);
+                } else if (tlb_type == GLOBAL && rt == 0) {
+                    rt = update_tlb(&TLB_head, &TLB_tail, pg_num, i);
+                }
+            }
+
+            // TLB Hit
+            if (rt == 2) {
+                pass
+            }
+
         }
     }
 
