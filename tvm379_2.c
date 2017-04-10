@@ -223,7 +223,7 @@ int lookup_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsig
 }
 
 void update_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsigned int page_num, int pid) {
-  printf("call update_tlb\n");
+  //printf("call update_tlb\n");
     struct tlb_entrie *tail = *tail_ptr;
     struct tlb_entrie *head = *head_ptr;
 
@@ -454,117 +454,136 @@ int main(int argc, char *argv[]){
     // reading memory references (address) from each file in cyclical order
     unsigned int address;
     int n, rt, fm_num, evicted_pg_num, evicted_pid;
+
+    // all processes are not EOF at start
+    int is_EOF[Nprocess];
     for (i = 0; i < Nprocess; i++) {
-        for (ref = 0; ref < quantum; ref++) {
-            if (!fread(&address,4,1,processes[i])) {
-                break;  // EOF
-            }
-            // increment counter of total number of reference ------------------
-            t = t + 1;
-            // -----------------------------------------------------------------
+        is_EOF[i] = 0;
+    }
+    int running_p = Nprocess;
+    int test = 0;
+    // loop until all processes is EOF (running_p = 0)
+    while (running_p > 0) {
+        printf("%d\n", test);
+        test++;
+        for (i = 0; i < Nprocess; i++) {
+            if (!is_EOF[i]) {
+                for (ref = 0; ref < quantum; ref++) {
+                    if (!fread(&address,4,1,processes[i])) {    // EOF
+                        is_EOF[i] = 1;
+                        running_p = running_p - 1;
+                        // freeMemory() ................................................
+                        break;
+                    }
+                    // increment counter of total number of reference ------------------
+                    t = t + 1;
+                    // -----------------------------------------------------------------
 
-            // right shift len_offset bit (get page number)
-            pg_num = address >> len_offset;
+                    // right shift len_offset bit (get page number)
+                    pg_num = address >> len_offset;
 
-            // lookup TLB table first
-            if (tlb_type == PROCESS) {
-                printf("pos1\n");
-                rt = lookup_tlb(&TLB_heads[i], &TLB_tails[i], pg_num, 0);
-            } else if (tlb_type == GLOBAL) {
-                printf("pos2\n");
-                rt = lookup_tlb(&TLB_head, &TLB_tail, pg_num, i);
-            }
-
-            // TLB miss
-            if (rt == 0 || rt == 1) {
-                // lookup page table
-                if (all_pages[i][pg_num].valid == 0) {      // page-fault
-                    // increment page-fault (pf) counter
-                    // ---------------------------------------------------------
-                    pf[i] = pf[i] + 1;
-                    // ---------------------------------------------------------
-
-                    // if there is a free frame. use the free frame first
-                    if (free_fm_head != NULL) {
-                        fm_num = useFreeFrame();
-                        addFrameReference(fm_num);
-                    } else {
-                        // else evict a frame
-                        fm_num = evictFrameReference();
+                    // lookup TLB table first
+                    if (tlb_type == PROCESS) {
+                        //printf("pos1\n");
+                        rt = lookup_tlb(&TLB_heads[i], &TLB_tails[i], pg_num, 0);
+                    } else if (tlb_type == GLOBAL) {
+                        //printf("pos2\n");
+                        rt = lookup_tlb(&TLB_head, &TLB_tail, pg_num, i);
                     }
 
-                    // evict memory
-                    if (phys_mem[fm_num].valid == 0) {
-                        // add occupied process-info to physical memory
-                        phys_mem[fm_num].pg_num = pg_num;
-                        phys_mem[fm_num].pid = i;
-                        phys_mem[fm_num].valid = 1;
+                    // TLB miss
+                    if (rt == 0 || rt == 1) {
+                        // lookup page table
+                        if (all_pages[i][pg_num].valid == 0) {      // page-fault
+                            // increment page-fault (pf) counter
+                            // ---------------------------------------------------------
+                            pf[i] = pf[i] + 1;
+                            // ---------------------------------------------------------
 
-                    } else {
-                        evicted_pg_num = phys_mem[fm_num].pg_num;
-                        evicted_pid = phys_mem[fm_num].pid;
+                            // if there is a free frame. use the free frame first
+                            if (free_fm_head != NULL) {
+                                fm_num = useFreeFrame();
+                                addFrameReference(fm_num);
+                            } else {
+                                // else evict a frame
+                                fm_num = evictFrameReference();
+                            }
 
-                        //increment pageout counter, decrease victim process's current_resident_page
-                        // -------------------------------------------------------------------------
-                        pageout[evicted_pid] = pageout[evicted_pid] + 1;
-                        current_resident_page[evicted_pid] = current_resident_page[evicted_pid] - 1;
-                        // -------------------------------------------------------------------------
+                            // evict memory
+                            if (phys_mem[fm_num].valid == 0) {
+                                // add occupied process-info to physical memory
+                                phys_mem[fm_num].pg_num = pg_num;
+                                phys_mem[fm_num].pid = i;
+                                phys_mem[fm_num].valid = 1;
 
-                        // set evicted page table to invalid
-                        all_pages[evicted_pid][evicted_pg_num].valid = 0;
+                            } else {
+                                evicted_pg_num = phys_mem[fm_num].pg_num;
+                                evicted_pid = phys_mem[fm_num].pid;
 
-                        // set evicted TLB table to invalid
-                        if (tlb_type == PROCESS) {
-                            setEvictedEntryToInvalid_tlb(&TLB_heads[evicted_pid], &TLB_tails[evicted_pid], evicted_pg_num, 0);
-                        } else if (tlb_type == GLOBAL) {
-                            setEvictedEntryToInvalid_tlb(&TLB_head, &TLB_tail, evicted_pg_num, evicted_pid);
+                                //increment pageout counter, decrease victim process's current_resident_page
+                                // -------------------------------------------------------------------------
+                                pageout[evicted_pid] = pageout[evicted_pid] + 1;
+                                current_resident_page[evicted_pid] = current_resident_page[evicted_pid] - 1;
+                                // -------------------------------------------------------------------------
+
+                                // set evicted page table to invalid
+                                all_pages[evicted_pid][evicted_pg_num].valid = 0;
+
+                                // set evicted TLB table to invalid
+                                if (tlb_type == PROCESS) {
+                                    setEvictedEntryToInvalid_tlb(&TLB_heads[evicted_pid], &TLB_tails[evicted_pid], evicted_pg_num, 0);
+                                } else if (tlb_type == GLOBAL) {
+                                    setEvictedEntryToInvalid_tlb(&TLB_head, &TLB_tail, evicted_pg_num, evicted_pid);
+                                }
+                            }
+
+                            // update page table (bring in new entry)
+                            all_pages[i][pg_num].valid = 1;
+                            all_pages[i][pg_num].fm_num = fm_num;
+
+                            // increment current_resident_page of the swap-in process
+                            // ---------------------------------------------------------
+                            current_resident_page[i] = current_resident_page[i] + 1;
+                            // ---------------------------------------------------------
+
+                        }
+
+                        // in physcial memory (page table is valid), it just not in TLB
+                        else if (all_pages[i][pg_num].valid == 1) {
+                            // if eviction policy is LRU -> "wipe the dust"
+                            if (ev_policy == LRU) {
+                                fm_num = all_pages[i][pg_num].fm_num;
+                                updateFrameReference(fm_num);
+                            }
+                        }
+
+                        // update TLB table (bring in new entry)
+                        // if rt = 0, the entry does not in TLB table
+                        if (tlb_type == PROCESS && rt == 0) {
+                            update_tlb(&TLB_heads[i], &TLB_tails[i], pg_num, 0);
+                        } else if (tlb_type == GLOBAL && rt == 0) {
+                            update_tlb(&TLB_head, &TLB_tail, pg_num, i);
                         }
                     }
 
-                    // update page table (bring in new entry)
-                    all_pages[i][pg_num].valid = 1;
-                    all_pages[i][pg_num].fm_num = fm_num;
-
-                    // increment current_resident_page of the swap-in process
-                    // ---------------------------------------------------------
-                    current_resident_page[i] = current_resident_page[i] + 1;
-                    // ---------------------------------------------------------
-
-                }
-
-                // in physcial memory (page table is valid), it just not in TLB
-                else if (all_pages[i][pg_num].valid == 1) {
-                    // if eviction policy is LRU -> "wipe the dust"
-                    if (ev_policy == LRU) {
-                        fm_num = all_pages[i][pg_num].fm_num;
-                        updateFrameReference(fm_num);
+                    // TLB Hit
+                    if (rt == 2) {
+                        // increment tlbhits counter
+                        tlbhits[i] = tlbhits[i] + 1;
                     }
+
+                    // add up total_resident_page ------------------------------------------------
+                    for (n = 0; n < Nprocess; n++) {
+                        total_resident_page[n] = total_resident_page[n] + current_resident_page[n];
+                    }
+                    // ---------------------------------------------------------------------------
+
+
                 }
-
-                // update TLB table (bring in new entry)
-                // if rt = 0, the entry does not in TLB table
-                if (tlb_type == PROCESS && rt == 0) {
-                    update_tlb(&TLB_heads[i], &TLB_tails[i], pg_num, 0);
-                } else if (tlb_type == GLOBAL && rt == 0) {
-                    update_tlb(&TLB_head, &TLB_tail, pg_num, i);
-                }
             }
-
-            // TLB Hit
-            if (rt == 2) {
-                // increment tlbhits counter
-                tlbhits[i] = tlbhits[i] + 1;
-            }
-
-            // add up total_resident_page ------------------------------------------------
-            for (n = 0; n < Nprocess; n++) {
-                total_resident_page[n] = total_resident_page[n] + current_resident_page[n];
-            }
-            // ---------------------------------------------------------------------------
-
-
         }
     }
+
 
     for (i = 0; i < Nprocess; i++) {
         printf("Process%d: %d %d %d %ld\n", i+1, tlbhits[i], pf[i], pageout[i], total_resident_page[i] / t);
