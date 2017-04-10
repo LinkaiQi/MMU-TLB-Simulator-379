@@ -450,7 +450,7 @@ int main(int argc, char *argv[]){
 
     // reading memory references (address) from each file in cyclical order
     unsigned int address;
-    int rt, fm_num, evicted_pg_num, evicted_pid;
+    int n, rt, fm_num, evicted_pg_num, evicted_pid;
     for (i = 0; i < Nprocess; i++) {
         for (ref = 0; ref < quantum; ref++) {
             if (!fread(&address,4,1,processes[i])) {
@@ -554,8 +554,8 @@ int main(int argc, char *argv[]){
             }
 
             // add up total_resident_page ------------------------------------------------
-            for (i = 0; i < Nprocess; i++) {
-                total_resident_page[i] = total_resident_page[i] + current_resident_page[i];
+            for (n = 0; n < Nprocess; n++) {
+                total_resident_page[n] = total_resident_page[n] + current_resident_page[n];
             }
             // ---------------------------------------------------------------------------
 
