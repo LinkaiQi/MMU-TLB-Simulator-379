@@ -223,7 +223,7 @@ int lookup_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsig
 }
 
 void update_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsigned int page_num, int pid) {
-  printf("call update_tlb\n");
+  //printf("call update_tlb\n");
     struct tlb_entrie *tail = *tail_ptr;
     struct tlb_entrie *head = *head_ptr;
 
@@ -465,19 +465,21 @@ int main(int argc, char *argv[]){
 
             // right shift len_offset bit (get page number)
             pg_num = address >> len_offset;
+            printf("pg_num: %d\n", pg_num);
 
             // lookup TLB table first
             if (tlb_type == PROCESS) {
-                printf("pos1\n");
+                //printf("pos1\n");
                 rt = lookup_tlb(&TLB_heads[i], &TLB_tails[i], pg_num, 0);
             } else if (tlb_type == GLOBAL) {
-                printf("pos2\n");
+                //printf("pos2\n");
                 rt = lookup_tlb(&TLB_head, &TLB_tail, pg_num, i);
             }
 
             // TLB miss
             if (rt == 0 || rt == 1) {
                 // lookup page table
+                printf("%d %d\n", i, pg_num);
                 if (all_pages[i][pg_num].valid == 0) {      // page-fault
                     // increment page-fault (pf) counter
                     // ---------------------------------------------------------
