@@ -546,7 +546,7 @@ int main(int argc, char *argv[]){
         }
     }
 
-    for (int i = 0; i < Nprocess; i++) {
+    for (i = 0; i < Nprocess; i++) {
         printf("Process%d: %d %d %d %ld\n", i+1, tlbhits[i], pf[i], pageout[i], total_resident_page[i] / t);
     }
 
