@@ -448,7 +448,7 @@ int main(int argc, char *argv[]){
     // initalize Page table (one table for each process)
     struct page_entrie **all_pages = (struct page_entrie **) malloc(sizeof(struct page_entrie *) * Nprocess);
     for (i = 0; i < Nprocess; i++) {
-        all_pages[i] = (struct page_entrie *) calloc((1 >> len_page), sizeof(struct page_entrie));
+        all_pages[i] = (struct page_entrie *) calloc((1 << len_page), sizeof(struct page_entrie));
     }
 
     // reading memory references (address) from each file in cyclical order
@@ -465,7 +465,6 @@ int main(int argc, char *argv[]){
 
             // right shift len_offset bit (get page number)
             pg_num = address >> len_offset;
-            printf("pg_num: %d\n", pg_num);
 
             // lookup TLB table first
             if (tlb_type == PROCESS) {
@@ -479,7 +478,6 @@ int main(int argc, char *argv[]){
             // TLB miss
             if (rt == 0 || rt == 1) {
                 // lookup page table
-                printf("%d %d\n", i, pg_num);
                 if (all_pages[i][pg_num].valid == 0) {      // page-fault
                     // increment page-fault (pf) counter
                     // ---------------------------------------------------------
