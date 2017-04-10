@@ -229,7 +229,7 @@ void update_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsi
 }
 
 void setEvictedEntryToInvalid_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsigned int page_num, int pid) {
-    struct tlb_entrie *tail = *tail_ptr;
+    //struct tlb_entrie *tail = *tail_ptr;
     struct tlb_entrie *head = *head_ptr;
     //start from the first entry
     struct tlb_entrie *current = head;
