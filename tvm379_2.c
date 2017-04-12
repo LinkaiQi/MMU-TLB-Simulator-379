@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <assert.h>
+#include <arpa/inet.h>
 
 #define GLOBAL 0
 #define PROCESS 1
@@ -17,6 +18,9 @@ struct reference *reference_tail = NULL;
 // (Global) TLB
 struct tlb_entrie* TLB_head;
 struct tlb_entrie* TLB_tail;
+// (Process) TLB
+struct tlb_entrie** TLB_heads;
+struct tlb_entrie** TLB_tails;
 
 struct tlb_entrie {
     unsigned int pg_num;
@@ -130,7 +134,7 @@ int evictFrameReference() {
     return evited_ref->fm_num;
 }
 
-void init_TLB_P(int tlbentries, int n_process, struct tlb_entrie** TLB_heads, struct tlb_entrie** TLB_tails) {
+void init_TLB_P(int tlbentries, int n_process) {
     int p, i;
     for (p = 0; p < n_process; p++) {
         // initial tlbentries entries
@@ -169,36 +173,42 @@ void init_TLB_G(int tlbentries) {
 }
 
 // if it is process TLB, pid pass as 0, else pid is the actual process id
-int lookup_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsigned int page_num, int pid) {
+int lookup_tlb_P(unsigned int page_num, int pid) {
     // get head and tail
-    struct tlb_entrie *head = *head_ptr;
-    struct tlb_entrie *tail = *tail_ptr;
+    //struct tlb_entrie *head = TLB_heads[pid];
+    //struct tlb_entrie *tail = TLB_tails[pid];
     //start from the first entry
-    struct tlb_entrie *current = head;
+    struct tlb_entrie *current = TLB_heads[pid];
     //navigate through TLB table
 
-
-struct tlb_entrie* ttt = head;
+/*
+struct tlb_entrie* ttt = TLB_heads[pid];
 int i = 0;
 while (ttt!= NULL) {
     i++;
     ttt = ttt->next;
 }
+printf("head address: %p\n", TLB_heads[pid]);
 printf("num_tlb: %d\n", i);
+printf("page_num: %d\n", page_num);
+printf("current->pg_num: %d\n", current->pg_num);
+*/
 
 
-    while(current->pg_num != page_num || current->ASID != pid) {
+    while(current->pg_num != page_num) {
         //if it is last entry
         if(current->next == NULL) {
             return 0;
         } else {
             //go to next entry
             current = current->next;
+            //printf("---------\n%p\n", current);
+            //printf("%p\n---------\n", current->next);
         }
         //printf("%p\n", (void *) current);
     }
 
-printf("reach here!\n");
+//printf("reach here!\n");
 //struct tlb_entrie* ttt = head;
 //int i = 0;
 //while (ttt!= NULL) {
@@ -217,22 +227,23 @@ printf("reach here!\n");
     if (prev_entry != NULL) {
         prev_entry->next = next_entry;
     } else {
-        head = next_entry;
+        TLB_heads[pid] = next_entry;
     }
     if (next_entry != NULL) {
         next_entry->prev = prev_entry;
     } else {
-        tail = prev_entry;
+        TLB_tails[pid] = prev_entry;
     }
     // then add to the removed entry to the head of TLB table
     current->prev = NULL;
-    current->next = head;
-    head->prev = current;
-    head = current;
+    current->next = TLB_heads[pid];
+    TLB_heads[pid]->prev = current;
+    TLB_heads[pid] = current;
+    //printf("current %p\n", current);
 
     // if the entry in invalid
-    if (head->valid == 0) {
-        head->valid = 1;
+    if (TLB_heads[pid]->valid == 0) {
+        TLB_heads[pid]->valid = 1;
         return 1;
     }
     return 2;
@@ -285,10 +296,10 @@ int lookup_tlb_G(unsigned int page_num, int pid) {
     return 2;
 }
 
-void update_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsigned int page_num, int pid) {
-  //printf("call update_tlb\n");
-    struct tlb_entrie *head = *head_ptr;
-    struct tlb_entrie *tail = *tail_ptr;
+void update_tlb_P(unsigned int page_num, int pid) {
+    //printf("call update_tlb_P\n");
+    //struct tlb_entrie *head = *head_ptr;
+    //struct tlb_entrie *tail = *tail_ptr;
 
     /*
     // evict the least recently used entry
@@ -309,23 +320,23 @@ void update_tlb(struct tlb_entrie **head_ptr, struct tlb_entrie **tail_ptr, unsi
     head = new_entry;
     */
 
-    struct tlb_entrie *renew_entry = tail;
+    struct tlb_entrie *renew_entry = TLB_tails[pid];
     struct tlb_entrie *last_entry = renew_entry->prev;
-    printf("pointer: %p\n", (void *)tail);
-    printf("pointer: %p\n", (void *)last_entry);
-    printf("pointer: %p\n", (void *)last_entry->prev);
+    //printf("pointer: %p\n", (void *)TLB_tails[pid]);
+    //printf("pointer: %p\n", (void *)last_entry);
+    //printf("pointer: %p\n", (void *)last_entry->prev);
     last_entry->next = NULL;
-    tail = last_entry;
+    TLB_tails[pid] = last_entry;
 
     // update renew_entry info
     renew_entry->pg_num = page_num;
     renew_entry->fm_num = 0;
     renew_entry->ASID = pid;
     renew_entry->valid = 1;
-    renew_entry->next = head;
+    renew_entry->next = TLB_heads[pid];
     renew_entry->prev = NULL;
-    head->prev = renew_entry;
-    head = renew_entry;
+    TLB_heads[pid]->prev = renew_entry;
+    TLB_heads[pid] = renew_entry;
 }
 
 
@@ -433,8 +444,8 @@ int main(int argc, char *argv[]){
     FILE **processes;
 
     // Process TLB
-    struct tlb_entrie** TLB_heads;
-    struct tlb_entrie** TLB_tails;
+    // struct tlb_entrie** TLB_heads;
+    // struct tlb_entrie** TLB_tails;
 
     // Global TLB
     // struct tlb_entrie* TLB_head;
@@ -555,7 +566,7 @@ int main(int argc, char *argv[]){
     if (tlb_type == PROCESS) {
         TLB_heads = (struct tlb_entrie**) malloc(sizeof(struct tlb_entrie*) * Nprocess);
         TLB_tails = (struct tlb_entrie**) malloc(sizeof(struct tlb_entrie*) * Nprocess);
-        init_TLB_P(tlbentries, Nprocess, TLB_heads, TLB_tails);
+        init_TLB_P(tlbentries, Nprocess);
     } else if (tlb_type == GLOBAL) {
 
         init_TLB_G(tlbentries);
@@ -638,7 +649,7 @@ printf("%d\n", r);
 
                     // lookup TLB table first
                     if (tlb_type == PROCESS) {
-                        rt = lookup_tlb(&TLB_heads[i], &TLB_tails[i], pg_num, 0);
+                        rt = lookup_tlb_P(pg_num, i);
                     } else if (tlb_type == GLOBAL) {
                         rt = lookup_tlb_G(pg_num, i);
                     }
@@ -721,7 +732,7 @@ printf("%d\n", r);
                         // update TLB table (bring in new entry)
                         // if rt = 0, the entry does not in TLB table
                         if (tlb_type == PROCESS && rt == 0) {
-                            update_tlb(&TLB_heads[i], &TLB_tails[i], pg_num, 0);
+                            update_tlb_P(pg_num, i);
                         } else if (tlb_type == GLOBAL && rt == 0) {
                             update_tlb_G(pg_num, i);
                         }
