@@ -24,5 +24,7 @@ int main(int argc, char *argv[]){
     printf("%d\n", all_pages[0][3].fm_num);
     printf("%d\n", all_pages[8][1].fm_num);
 
+    printf("%lu\n", sizeof(unsigned int));
+
 
 }

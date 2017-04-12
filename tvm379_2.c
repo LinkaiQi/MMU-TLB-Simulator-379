@@ -616,10 +616,25 @@ int main(int argc, char *argv[]){
                     }
                     // increment counter of total number of reference ------------------
                     t = t + 1;
+/*
+if (t > 2000) {
+    return 0;
+}
+int r = 0;
+for (int w = 0; w < physpages; w++) {
+    if (phys_mem[w].valid == 1) {
+        r = r + 1;
+    }
+}
+printf("%d\n", r);
+*/
+
                     // -----------------------------------------------------------------
 
                     // right shift len_offset bit (get page number)
+                    address = htonl(address);
                     pg_num = address >> len_offset;
+//printf("pg_num: %d\n", pg_num);
 
                     // lookup TLB table first
                     if (tlb_type == PROCESS) {
@@ -695,6 +710,7 @@ int main(int argc, char *argv[]){
 
                         // in physcial memory (page table is valid), it just not in TLB
                         else if (all_pages[i][pg_num].valid == 1) {
+                            //printf("lalalalalala\n");
                             // if eviction policy is LRU -> "wipe the dust"
                             if (ev_policy == LRU) {
                                 fm_num = all_pages[i][pg_num].fm_num;
@@ -720,7 +736,7 @@ int main(int argc, char *argv[]){
                     // add up total_resident_page ------------------------------------------------
                     for (n = 0; n < Nprocess; n++) {
                         total_resident_page[n] = total_resident_page[n] + current_resident_page[n];
-                        assert(current_resident_page[n] <= 500);
+                        assert(current_resident_page[n] <= physpages);
                     }
                     // ---------------------------------------------------------------------------
 
