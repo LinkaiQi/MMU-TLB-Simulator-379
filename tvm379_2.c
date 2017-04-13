@@ -21,6 +21,10 @@ struct tlb_entrie* TLB_tail;
 // (Process) TLB
 struct tlb_entrie** TLB_heads;
 struct tlb_entrie** TLB_tails;
+// physical memeory pointer
+struct phys_entry *phys_mem;
+// list of page table pointers (each process has a page table)
+struct page_entrie **all_pages;
 
 struct tlb_entrie {
     unsigned int pg_num;
@@ -434,6 +438,28 @@ void addFreeFrame(int frame) {
     //return head;
 }
 
+void release_memory(int pid, int physpages, int tlb_type) {
+    // release physical memory
+    unsigned int release_pg;
+    int fnum;
+    /* scan through the whole physical memory,
+    release memory which occupied by the pid process; */
+    for (fnum = 0; fnum < physpages; fnum++) {
+        if (phys_mem[fnum].pid == pid) {
+            release_pg = phys_mem[fnum].pg_num;
+            // update page table
+            all_pages[pid][release_pg].fm_num = 0;
+            all_pages[pid][release_pg].valid = 0;
+            // add the released frame to addFreeFrame List
+            addFreeFrame(fnum);
+            // update physical memory frame
+            phys_mem[fnum].pg_num = 0;
+            phys_mem[fnum].pid = 0;
+            phys_mem[fnum].valid = 0;
+        }
+    }
+};
+
 
 
 int main(int argc, char *argv[]){
@@ -452,7 +478,7 @@ int main(int argc, char *argv[]){
     // struct tlb_entrie* TLB_tail;
 
     // physical memeory pointer
-    struct phys_entry *phys_mem;
+    // struct phys_entry *phys_mem;
 
     // number of process
     int Nprocess = argc-7;
@@ -577,7 +603,7 @@ int main(int argc, char *argv[]){
     int len_page = 32 - len_offset;
 
     // initalize Page table (one table for each process)
-    struct page_entrie **all_pages = (struct page_entrie **) malloc(sizeof(struct page_entrie *) * Nprocess);
+    all_pages = (struct page_entrie **) malloc(sizeof(struct page_entrie *) * Nprocess);
     for (i = 0; i < Nprocess; i++) {
         all_pages[i] = (struct page_entrie *) calloc((1 << len_page), sizeof(struct page_entrie));
     }
@@ -622,7 +648,8 @@ int main(int argc, char *argv[]){
                     if (!fread(&address,4,1,processes[i])) {    // EOF
                         is_EOF[i] = 1;
                         running_p = running_p - 1;
-                        // freeMemory() ................................................
+                        // after process quit, release memory it holds
+                        release_memory(i, physpages, tlb_type);
                         break;
                     }
                     // increment counter of total number of reference ------------------
